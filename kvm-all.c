@@ -3,6 +3,7 @@
  *
  * Copyright IBM, Corp. 2008
  *           Red Hat, Inc. 2008
+ * Copyright (C) 2017 FireEye, Inc. All Rights Reserved.
  *
  * Authors:
  *  Anthony Liguori   <aliguori@us.ibm.com>
@@ -17,6 +18,9 @@
 #include <sys/ioctl.h>
 
 #include <linux/kvm.h>
+#include <linux/kvm_vmi.h>
+
+#include "vmi.h"
 
 #include "qemu-common.h"
 #include "qemu/atomic.h"
@@ -1926,6 +1930,8 @@ int kvm_cpu_exec(CPUState *cpu)
             qemu_cpu_kick_self();
         }
 
+        cpu->watchpoint_hit = NULL;
+
         run_ret = kvm_vcpu_ioctl(cpu, KVM_RUN, 0);
 
         attrs = kvm_arch_post_run(cpu, run);
@@ -2243,6 +2249,23 @@ int kvm_update_guest_debug(CPUState *cpu, unsigned long reinject_trap)
     return data.err;
 }
 
+static void kvm_invoke_mtf(CPUState *cpu, run_on_cpu_data data)
+{
+    union kvm_vmi_feature mtf;
+
+    mtf.mtf.feature = KVM_VMI_FEATURE_MTF;
+    mtf.mtf.enable = (bool) cpu->vmi_mtf_enabled;
+
+    kvm_vcpu_ioctl(cpu, KVM_VMI_FEATURE_UPDATE,
+                   &mtf);
+}
+
+int kvm_update_mtf(CPUState *cpu)
+{
+    run_on_cpu(cpu, kvm_invoke_mtf, RUN_ON_CPU_HOST_PTR(NULL));
+    return 0;
+}
+
 int kvm_insert_breakpoint(CPUState *cpu, target_ulong addr,
                           target_ulong len, int type)
 {
@@ -2485,3 +2508,30 @@ static void kvm_type_init(void)
 }
 
 type_init(kvm_type_init);
+
+
+int kvm_vmi_vcpu_ioctl_all(uint32_t ioctl, void *data)
+{
+    int r, tmp;
+    CPUState *cpu;
+
+    r = 0;
+    CPU_FOREACH(cpu) {
+        tmp = kvm_vcpu_ioctl(cpu, ioctl, data);
+
+        if (tmp != 0)
+            r = tmp;
+    }
+
+    return r;
+}
+
+int kvm_vmi_vcpu_ioctl_single(uint32_t cpu_id, uint32_t ioctl, void *data)
+{
+    CPUState *cpu = qemu_get_cpu(cpu_id);
+
+    if (cpu == NULL)
+        return -1;
+
+    return kvm_vcpu_ioctl(cpu, ioctl, data);
+}

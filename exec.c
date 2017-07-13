@@ -2,6 +2,7 @@
  *  Virtual page mapping
  *
  *  Copyright (c) 2003 Fabrice Bellard
+ *  Copyright (C) 2017 FireEye, Inc. All Rights Reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -62,6 +63,7 @@
 #ifndef _WIN32
 #include "qemu/mmap-alloc.h"
 #endif
+#include "vmi.h"
 
 //#define DEBUG_SUBPAGE
 
@@ -867,6 +869,14 @@ void cpu_breakpoint_remove_all(CPUState *cpu, int mask)
         if (bp->flags & mask) {
             cpu_breakpoint_remove_by_ref(cpu, bp);
         }
+    }
+}
+
+void cpu_mtf_single_step(CPUState *cpu, bool enabled)
+{
+    if(cpu->vmi_mtf_enabled != enabled){
+        cpu->vmi_mtf_enabled = enabled;
+        kvm_update_mtf(cpu);
     }
 }
 

@@ -2,6 +2,7 @@
  *  i386 helpers (without register variable usage)
  *
  *  Copyright (c) 2003 Fabrice Bellard
+ *  Copyright (C) 2017 FireEye, Inc. All Rights Reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -372,6 +373,187 @@ void x86_cpu_dump_local_apic_state(CPUState *cs, FILE *f,
 
 #define DUMP_CODE_BYTES_TOTAL    50
 #define DUMP_CODE_BYTES_BACKWARD 20
+
+void x86_cpu_get_state(CPUState *cs, void *state){
+    X86CPU *cpu = X86_CPU(cs);
+    CPUX86State *env = &cpu->env;
+    X86VCPUState *vcpu_state = state;
+
+    vcpu_state->rax = env->regs[R_EAX];
+    vcpu_state->rbx = env->regs[R_EBX];
+    vcpu_state->rcx = env->regs[R_ECX];
+    vcpu_state->rdx = env->regs[R_EDX];
+    vcpu_state->rsi = env->regs[R_ESI];
+    vcpu_state->rdi = env->regs[R_EDI];
+    vcpu_state->rbp = env->regs[R_EBP];
+    vcpu_state->rsp = env->regs[R_ESP];
+#ifdef TARGET_X86_64
+    if (env->hflags & HF_CS64_MASK) {
+        vcpu_state->r8 = env->regs[8];
+        vcpu_state->r9 = env->regs[9];
+        vcpu_state->r10 = env->regs[10];
+        vcpu_state->r11 = env->regs[11];
+        vcpu_state->r12 = env->regs[12];
+        vcpu_state->r13 = env->regs[13];
+        vcpu_state->r14 = env->regs[14];
+        vcpu_state->r15 = env->regs[15];
+    }
+#endif
+
+    vcpu_state->rip = env->eip;
+    vcpu_state->eflags = cpu_compute_eflags(env);
+
+    vcpu_state->cr0 = env->cr[0];
+    vcpu_state->cr2 = env->cr[2];
+    vcpu_state->cr3 = env->cr[3];
+    vcpu_state->cr4 = env->cr[4];
+
+    vcpu_state->dr0 = env->dr[0];
+    vcpu_state->dr1 = env->dr[1];
+    vcpu_state->dr2 = env->dr[2];
+    vcpu_state->dr3 = env->dr[3];
+    vcpu_state->dr6 = env->dr[6];
+    vcpu_state->dr7 = env->dr[7];
+
+    vcpu_state->efer = env->efer;
+
+    vcpu_state->es->selector = env->segs[0].selector;
+    vcpu_state->es->base = env->segs[0].base;
+    vcpu_state->es->limit = env->segs[0].limit;
+    vcpu_state->es->flags = env->segs[0].flags;
+
+    vcpu_state->cs->selector = env->segs[1].selector;
+    vcpu_state->cs->base = env->segs[1].base;
+    vcpu_state->cs->limit = env->segs[1].limit;
+    vcpu_state->cs->flags = env->segs[1].flags;
+
+    vcpu_state->ss->selector = env->segs[2].selector;
+    vcpu_state->ss->base = env->segs[2].base;
+    vcpu_state->ss->limit = env->segs[2].limit;
+    vcpu_state->ss->flags = env->segs[2].flags;
+
+    vcpu_state->ds->selector = env->segs[3].selector;
+    vcpu_state->ds->base = env->segs[3].base;
+    vcpu_state->ds->limit = env->segs[3].limit;
+    vcpu_state->ds->flags = env->segs[3].flags;
+
+    vcpu_state->fs->selector = env->segs[4].selector;
+    vcpu_state->fs->base = env->segs[4].base;
+    vcpu_state->fs->limit = env->segs[4].limit;
+    vcpu_state->fs->flags = env->segs[4].flags;
+
+    vcpu_state->gs->selector = env->segs[5].selector;
+    vcpu_state->gs->base = env->segs[5].base;
+    vcpu_state->gs->limit = env->segs[5].limit;
+    vcpu_state->gs->flags = env->segs[5].flags;
+
+    vcpu_state->ldt->selector = env->ldt.selector;
+    vcpu_state->ldt->base = env->ldt.base;
+    vcpu_state->ldt->limit = env->ldt.limit;
+    vcpu_state->ldt->flags = env->ldt.flags;
+
+    vcpu_state->tr->selector = env->tr.selector;
+    vcpu_state->tr->base = env->tr.base;
+    vcpu_state->tr->limit = env->tr.limit;
+    vcpu_state->tr->flags = env->tr.flags;
+
+    vcpu_state->gdt->base = env->gdt.base;
+    vcpu_state->gdt->limit = env->gdt.limit;
+
+    vcpu_state->idt->base = env->idt.base;
+    vcpu_state->idt->limit = env->idt.limit;
+}
+
+void x86_cpu_set_state(CPUState *cs, void *state){
+    X86CPU *cpu = X86_CPU(cs);
+    CPUX86State *env = &cpu->env;
+    X86VCPUState *vcpu_state = state;
+
+    env->regs[R_EAX] = vcpu_state->rax;
+    env->regs[R_EBX] = vcpu_state->rbx;
+    env->regs[R_ECX] = vcpu_state->rcx;
+    env->regs[R_EDX] = vcpu_state->rdx;
+    env->regs[R_ESI] = vcpu_state->rsi;
+    env->regs[R_EDI] = vcpu_state->rdi;
+    env->regs[R_EBP] = vcpu_state->rbp;
+    env->regs[R_ESP] = vcpu_state->rsp;
+#ifdef TARGET_X86_64
+    if (env->hflags & HF_CS64_MASK) {
+        env->regs[8] = vcpu_state->r8;
+        env->regs[9] = vcpu_state->r9;
+        env->regs[10] = vcpu_state->r10;
+        env->regs[11] = vcpu_state->r11;
+        env->regs[12] = vcpu_state->r12;
+        env->regs[13] = vcpu_state->r13;
+        env->regs[14] = vcpu_state->r14;
+        env->regs[15] = vcpu_state->r15;
+    }
+#endif
+
+    env->eip = vcpu_state->rip;
+
+    cpu_load_eflags(env, vcpu_state->eflags, 0);
+
+    cpu_x86_update_cr0(env, vcpu_state->cr0);
+    env->cr[2] = vcpu_state->cr2;
+    cpu_x86_update_cr3(env, vcpu_state->cr3);
+    cpu_x86_update_cr4(env, vcpu_state->cr4);
+
+    env->dr[0] = vcpu_state->dr0;
+    env->dr[1] = vcpu_state->dr1;
+    env->dr[2] = vcpu_state->dr2;
+    env->dr[3] = vcpu_state->dr3;
+    env->dr[6] = vcpu_state->dr6;
+    env->dr[7] = vcpu_state->dr7;
+
+    cpu_load_efer(env, vcpu_state->efer);
+
+    env->segs[0].selector = vcpu_state->es->selector;
+    env->segs[0].base = vcpu_state->es->base;
+    env->segs[0].limit = vcpu_state->es->limit;
+    env->segs[0].flags = vcpu_state->es->flags;
+
+    env->segs[1].selector = vcpu_state->cs->selector;
+    env->segs[1].base = vcpu_state->cs->base;
+    env->segs[1].limit = vcpu_state->cs->limit;
+    env->segs[1].flags = vcpu_state->cs->flags;
+
+    env->segs[2].selector = vcpu_state->ss->selector;
+    env->segs[2].base = vcpu_state->ss->base;
+    env->segs[2].limit = vcpu_state->ss->limit;
+    env->segs[2].flags = vcpu_state->ss->flags;
+
+    env->segs[3].selector = vcpu_state->ds->selector;
+    env->segs[3].base = vcpu_state->ds->base;
+    env->segs[3].limit = vcpu_state->ds->limit;
+    env->segs[3].flags = vcpu_state->ds->flags;
+
+    env->segs[4].selector = vcpu_state->fs->selector;
+    env->segs[4].base = vcpu_state->fs->base;
+    env->segs[4].limit = vcpu_state->fs->limit;
+    env->segs[4].flags = vcpu_state->fs->flags;
+
+    env->segs[5].selector = vcpu_state->gs->selector;
+    env->segs[5].base = vcpu_state->gs->base;
+    env->segs[5].limit = vcpu_state->gs->limit;
+    env->segs[5].flags = vcpu_state->gs->flags;
+
+    env->ldt.selector = vcpu_state->ldt->selector;
+    env->ldt.base = vcpu_state->ldt->base;
+    env->ldt.limit = vcpu_state->ldt->limit;
+    env->ldt.flags = vcpu_state->ldt->flags;
+
+    env->tr.selector = vcpu_state->tr->selector;
+    env->tr.base = vcpu_state->tr->base;
+    env->tr.limit = vcpu_state->tr->limit;
+    env->tr.flags = vcpu_state->tr->flags;
+
+    env->gdt.base = vcpu_state->gdt->base;
+    env->gdt.limit = vcpu_state->gdt->limit;
+
+    env->idt.base = vcpu_state->idt->base;
+    env->idt.limit = vcpu_state->idt->limit;
+}
 
 void x86_cpu_dump_state(CPUState *cs, FILE *f, fprintf_function cpu_fprintf,
                         int flags)

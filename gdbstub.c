@@ -2,6 +2,7 @@
  * gdb server stub
  *
  * Copyright (c) 2003-2005 Fabrice Bellard
+ * Copyright (C) 2017 FireEye, Inc. All Rights Reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -20,6 +21,7 @@
 #include "qapi/error.h"
 #include "qemu/cutils.h"
 #include "cpu.h"
+#include "qmp-commands.h"
 #ifdef CONFIG_USER_ONLY
 #include "qemu.h"
 #else
@@ -1271,7 +1273,6 @@ static void gdb_vm_state_change(void *opaque, int running, RunState state)
                      "T%02xthread:%02x;%swatch:" TARGET_FMT_lx ";",
                      GDB_SIGNAL_TRAP, cpu_index(cpu), type,
                      (target_ulong)cpu->watchpoint_hit->vaddr);
-            cpu->watchpoint_hit = NULL;
             goto send_packet;
         }
         tb_flush(cpu);
@@ -1787,3 +1788,13 @@ int gdbserver_start(const char *device)
     return 0;
 }
 #endif
+
+void qmp_gdbserver(const char *device, Error **errp)
+{
+    if (!device || device[0] == '\0') {
+        device = "tcp::" DEFAULT_GDBSTUB_PORT;
+    }
+    if (gdbserver_start(device) < 0) {
+        error_setg(errp, "Could not open gdbserver on device '%s'", device);
+    }
+}

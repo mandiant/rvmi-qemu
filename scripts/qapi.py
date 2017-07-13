@@ -3,6 +3,7 @@
 #
 # Copyright IBM, Corp. 2011
 # Copyright (c) 2013-2016 Red Hat Inc.
+# Copyright (C) 2017 FireEye, Inc. All Rights Reserved.
 #
 # Authors:
 #  Anthony Liguori <aliguori@us.ibm.com>
@@ -46,6 +47,7 @@ returns_whitelist = [
     'query-tpm-models',
     'query-tpm-types',
     'ringbuf-read',
+    'vmi-read-mem',
 
     # From QGA:
     'guest-file-open',

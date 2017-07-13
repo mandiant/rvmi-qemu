@@ -2,6 +2,7 @@
  * QEMU System Emulator
  *
  * Copyright (c) 2003-2008 Fabrice Bellard
+ * Copyright (C) 2017 FireEye, Inc. All Rights Reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -123,6 +124,8 @@ int main(int argc, char **argv)
 #include "sysemu/replay.h"
 #include "qapi/qmp/qerror.h"
 #include "sysemu/iothread.h"
+
+#include "vmi.h"
 
 #define MAX_VIRTIO_CONSOLES 1
 #define MAX_SCLP_CONSOLES 1
@@ -602,6 +605,8 @@ static const RunStateTransition runstate_transitions_def[] = {
     { RUN_STATE_DEBUG, RUN_STATE_FINISH_MIGRATE },
     { RUN_STATE_DEBUG, RUN_STATE_PRELAUNCH },
 
+    { RUN_STATE_VMI, RUN_STATE_RUNNING },
+
     { RUN_STATE_INMIGRATE, RUN_STATE_INTERNAL_ERROR },
     { RUN_STATE_INMIGRATE, RUN_STATE_IO_ERROR },
     { RUN_STATE_INMIGRATE, RUN_STATE_PAUSED },
@@ -647,6 +652,7 @@ static const RunStateTransition runstate_transitions_def[] = {
     { RUN_STATE_COLO, RUN_STATE_RUNNING },
 
     { RUN_STATE_RUNNING, RUN_STATE_DEBUG },
+    { RUN_STATE_RUNNING, RUN_STATE_VMI },
     { RUN_STATE_RUNNING, RUN_STATE_INTERNAL_ERROR },
     { RUN_STATE_RUNNING, RUN_STATE_IO_ERROR },
     { RUN_STATE_RUNNING, RUN_STATE_PAUSED },
@@ -801,6 +807,30 @@ void vm_start(void)
     }
 
     qapi_event_send_resume(&error_abort);
+}
+
+void vm_start_silent(CPUState *cpu)
+{
+    RunState requested;
+
+    qemu_vmstop_requested(&requested);
+    if (runstate_is_running() && requested == RUN_STATE__MAX) {
+        return;
+    }
+
+    if (!runstate_is_running()) {
+        replay_enable_events();
+        cpu_enable_ticks();
+        runstate_set(RUN_STATE_RUNNING);
+        vm_state_notify(1, RUN_STATE_RUNNING);
+        if(cpu){
+            qemu_clock_enable(QEMU_CLOCK_VIRTUAL, true);
+            cpu_resume(cpu);
+        }
+        else{
+            resume_all_vcpus();
+        }
+    }
 }
 
 
@@ -1910,7 +1940,37 @@ void qemu_system_debug_request(void)
 static bool main_loop_should_exit(void)
 {
     RunState r;
-    if (qemu_debug_requested()) {
+    static bool vmi_sim_start = false;
+
+    if(vmi_initialized()){
+        if(vmi_get_vm_state() == RUNNING &&
+           vmi_get_num_events()){
+
+            if(vmi_sim_start){
+                vmi_handle_vmi();
+                vmi_sim_start = false;
+            }
+            else{
+                vm_stop_silent(RUN_STATE_VMI);
+            }
+
+            if(vmi_get_vm_state() == RUNNING && vmi_pending_ss()){
+                vm_start_silent(vmi_pending_ss());
+            }
+            else if(vmi_get_vm_state() == RUNNING && vmi_get_num_events()){
+                //if there are more events in the queue, only simulate the start for consistency
+                vmi_handle_running();
+                vmi_sim_start = true;
+            }
+            else if(vmi_get_vm_state() == RUNNING){
+                vm_start_silent(NULL);
+            }
+            else{
+                qapi_event_send_stop(&error_abort);
+            }
+        }
+    }
+    else if (qemu_debug_requested()) {
         vm_stop(RUN_STATE_DEBUG);
     }
     if (qemu_suspend_requested()) {

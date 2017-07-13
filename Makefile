@@ -489,6 +489,7 @@ endif
 	for d in $(TARGET_DIRS); do \
 	$(MAKE) $(SUBDIR_MAKEFLAGS) TARGET_DIR=$$d/ -C $$d $@ || exit 1 ; \
         done
+	install -c -m 0755 $(SRC_PATH)/scripts/vmi/qemu.py $(bindir)/
 
 # various test targets
 test speed: all

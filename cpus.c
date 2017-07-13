@@ -2,6 +2,7 @@
  * QEMU System Emulator
  *
  * Copyright (c) 2003-2008 Fabrice Bellard
+ * Copyright (c) 2017 FireEye, Inc. All Rights Reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -46,6 +47,7 @@
 #include "qapi-event.h"
 #include "hw/nmi.h"
 #include "sysemu/replay.h"
+#include "vmi.h"
 
 #ifndef _WIN32
 #include "qemu/compatfd.h"
@@ -756,6 +758,24 @@ static int do_vm_stop(RunState state)
     return ret;
 }
 
+static int do_vm_stop_silent(RunState state)
+{
+    int ret = 0;
+
+    if (runstate_is_running()) {
+        cpu_disable_ticks();
+        pause_all_vcpus();
+        runstate_set(state);
+        vm_state_notify(0, state);
+    }
+
+    bdrv_drain_all();
+    replay_disable_events();
+    ret = bdrv_flush_all();
+
+    return ret;
+}
+
 static bool cpu_can_run(CPUState *cpu)
 {
     if (cpu->stop) {
@@ -769,9 +789,26 @@ static bool cpu_can_run(CPUState *cpu)
 
 static void cpu_handle_guest_debug(CPUState *cpu)
 {
-    gdb_set_stop_cpu(cpu);
-    qemu_system_debug_request();
-    cpu->stopped = true;
+    if(vmi_initialized()){
+        vmi_add_event(cpu);
+        qemu_notify_event();
+        cpu->stopped = true;
+    }
+    else{
+        gdb_set_stop_cpu(cpu);
+        qemu_system_debug_request();
+        cpu->stopped = true;
+
+    }
+}
+
+static void cpu_handle_vmi(CPUState *cpu)
+{
+    if(vmi_initialized()){
+        vmi_add_event(cpu);
+        qemu_notify_event();
+        cpu->stopped = true;
+    }
 }
 
 #ifdef CONFIG_LINUX
@@ -998,6 +1035,9 @@ static void *qemu_kvm_cpu_thread_fn(void *arg)
             r = kvm_cpu_exec(cpu);
             if (r == EXCP_DEBUG) {
                 cpu_handle_guest_debug(cpu);
+            }
+            else if(r == EXCP_VMI){
+                cpu_handle_vmi(cpu);
             }
         }
         qemu_kvm_wait_io_event(cpu);
@@ -1499,6 +1539,22 @@ int vm_stop(RunState state)
     }
 
     return do_vm_stop(state);
+}
+
+int vm_stop_silent(RunState state)
+{
+    if (qemu_in_vcpu_thread()) {
+        qemu_system_vmstop_request_prepare();
+        qemu_system_vmstop_request(state);
+        /*
+         * FIXME: should not return to device code in case
+         * vm_stop() has been requested.
+         */
+        cpu_stop_current();
+        return 0;
+    }
+
+    return do_vm_stop_silent(state);
 }
 
 /* does a state transition even if the VM is already stopped,

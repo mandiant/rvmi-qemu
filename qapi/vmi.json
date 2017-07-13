@@ -1,0 +1,218 @@
+###############################################################################
+# QEMU KVM VMI support
+#
+# Copyright (C) 2017 FireEye, Inc. All Rights Reserved.
+#
+# Authors:
+#  Jonas Pfoh      <jonas.pfoh@fireeye.com>
+#  Sebastian Vogl  <sebastian.vogl@fireeye.com>
+#
+# This library is free software; you can redistribute it and/or
+# modify it under the terms of the GNU Lesser General Public
+# License as published by the Free Software Foundation.
+# Version 2 of the License.
+#
+# This library is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# Lesser General Public License for more details.
+#
+# You should have received a copy of the GNU Lesser General Public
+# License along with this library; if not, see <http://www.gnu.org/licenses/>.
+###############################################################################
+
+###############################################################################
+# VMI DEFINTIONS
+###############################################################################
+{ 'enum': 'VMIFeature',
+  'data': ['trap_task_switch'] }
+
+{ 'enum': 'VmiBpAction',
+  'data': ['add', 'remove'] }
+
+#WARNING: this must match defines in gdbstub.h
+{ 'enum': 'GdbBpType',
+  'data': ['breakpoint_sw', 'breakpoint_hw',
+           'watchpoint_write', 'watchpoint_read',
+           'watchpoint_access'] }
+
+{ 'struct': 'MemInfo', 'data': {'filebacked': 'bool', 'path': 'str', 'size': 'uint64'}}
+{ 'struct': 'VMInfo', 'data': {'num_cpus': 'uint32', 'mem_info': 'MemInfo'} }
+{ 'struct': 'X86Segment', 'data': {'selector':'uint32','base':'uint64','limit':'uint32','flags':'uint32'}}
+{ 'struct': 'X86VCPUState', 'data': {'rax':'uint64','rbx':'uint64','rcx':'uint64','rdx':'uint64',
+				     'rsi':'uint64','rdi':'uint64','rbp':'uint64','rsp':'uint64',
+				     'r8':'uint64','r9':'uint64','r10':'uint64','r11':'uint64',
+				     'r12':'uint64','r13':'uint64','r14':'uint64','r15':'uint64',
+				     'rip':'uint64','eflags':'uint64',
+				     'cr0':'uint64','cr2':'uint64','cr3':'uint64','cr4':'uint64',
+				     'dr0':'uint64','dr1':'uint64','dr2':'uint64','dr3':'uint64',
+				     'dr6':'uint64','dr7':'uint64',
+				     'efer':'uint64',
+				     'es':'X86Segment','cs':'X86Segment','ss':'X86Segment','ds':'X86Segment',
+				     'fs':'X86Segment','gs':'X86Segment','ldt':'X86Segment','tr':'X86Segment',
+				     'gdt':'X86Segment','idt':'X86Segment'
+				    }}
+{ 'struct': 'VMILBRInfo',
+  'data': { 'entries': 'uint32', 'tos': 'uint64',
+            'from': ['uint64'], 'to': ['uint64'] }}
+
+
+###############################################################################
+# VMI COMMANDS
+###############################################################################
+##
+# @vmi-read-mem:
+#
+# Read a portion of guest physical memory.
+#
+# @offset: the physical address of the guest to start from
+#
+# @size: the size of memory region to save
+#
+# Returns: the read data base64 encoded
+#
+# Since:
+#
+##
+{ 'command': 'vmi-read-mem',
+  'data': {'offset': 'uint64', 'size': 'uint64'},
+  'returns': 'str' }
+
+##
+# @vmi-write-mem
+#
+# Write to the physical memory of the guest.
+#
+# @data: the data to write base64 encoded.
+#
+# @offset: the offset that the data should be written to.
+#
+# Returns: the bytes written
+##
+{ 'command': 'vmi-write-mem',
+  'data': {'data': 'str', 'offset': 'uint64'}}
+
+{ 'command': 'vmi-get-vminfo',
+  'returns': 'VMInfo' }
+
+{ 'command': 'vmi-get-cpu-state',
+  'data': {'cpu_num': 'uint32'},
+  'returns': 'X86VCPUState' }
+
+{ 'command': 'vmi-set-cpu-state',
+  'data': {'cpu_num': 'uint32', 'state': 'X86VCPUState'}}
+
+##
+# @vmi-task-switch:
+#
+# Control VMI task switch trapping.
+#
+# @enable: whether task switch trapping should be enabled or disabled.
+#
+# @dtb: the cr3 for which task switch trapping should be enabled.
+#
+# @trap_in: trap when the dtb comes into context.
+#
+# @trap_out: trap when the dtb goes out of context.
+#
+# Returns: 0 on success.
+##
+{ 'command': 'vmi-task-switch',
+  'data': {'enable': 'bool', 'dtb': 'uint64', 'trap_in': 'bool',
+           'trap_out': 'bool'} }
+
+##
+# @vmi-bp:
+#
+# Control VMI breakpoints.
+#
+# @action: the action to carry out.
+#
+# @dtb: the dtb of the process (0 for global BP)
+#
+# @gva: the gva where to place the bp
+#
+# @length: length of watchpoint
+#
+# @type: the type of the BP
+#
+##
+{ 'command': 'vmi-bp',
+  'data': {'action': 'VmiBpAction', 'dtb': 'uint64',
+           'gva': 'uint64', 'length': 'uint64',
+           'type': 'GdbBpType'} }
+
+##
+# @vmi-ss:
+#
+# request the next continue single steps.
+#
+# @cpu_id: the cpu index on which the single is requested
+#
+##
+{ 'command': 'vmi-ss',
+  'data': {'cpu_id': 'uint32'} }
+
+##
+# @vmi-lbr
+#
+# Control the Last Branch Record (lbr) stack.
+#
+# @enable: enabler or disable lbr recording.
+#
+# @select: the mask to use for MSR_LBR_SELECT.
+##
+{ 'command': 'vmi-lbr',
+  'data': {'enable': 'bool', 'select': 'uint64'} }
+
+##
+# @vmi-get-lbr
+#
+# Get the current data of the LBR stack.
+#
+# @cpuid: The id of the CPU whose LBR data should be retrieved.
+##
+{ 'command': 'vmi-get-lbr',
+  'data': {'cpuid': 'uint32'},
+  'returns': 'VMILBRInfo' }
+
+###############################################################################
+# VMI EVENTS
+###############################################################################
+##
+# @VMI_TASK_SWITCH
+#
+# Emitted when a task switch occurs and the task switch interception feature
+# is enabled.
+#
+# @old: The old value of the CR3.
+#
+# @new: The new value of the CR3.
+##
+{ 'event': 'VMI_TASK_SWITCH',
+  'data': { 'cpu_id': 'int', 'old': 'uint64', 'new': 'uint64'} }
+
+##
+# @VMI_BP
+#
+# Emitted when a breakpoint hits
+#
+# @cpu_id: the id of the cpu that hit.
+#
+# @gva: the gva that hit
+#
+# @type: the type of the bp that hit
+#
+##
+{ 'event': 'VMI_BP',
+  'data': { 'cpu_id': 'int', 'gva': 'uint64', 'type': 'GdbBpType'} }
+
+##
+# @VMI_SS
+#
+# Emitted when a singlestep returns.
+#
+# @cpu_id: the id of the cpu that hit.
+##
+{ 'event': 'VMI_SS',
+  'data': { 'cpu_id': 'int'} }

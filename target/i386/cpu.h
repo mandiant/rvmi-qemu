@@ -2,6 +2,7 @@
  * i386 virtual CPU header
  *
  *  Copyright (c) 2003 Fabrice Bellard
+ *  Copyright (C) 2017 FireEye, Inc. All Rights Reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -1655,5 +1656,9 @@ void x86_cpu_dump_local_apic_state(CPUState *cs, FILE *f,
 
 /* cpu.c */
 bool cpu_is_bsp(X86CPU *cpu);
+
+/* helper.c */
+void x86_cpu_get_state(CPUState *cs, void *state);
+void x86_cpu_set_state(CPUState *cs, void *state);
 
 #endif /* I386_CPU_H */

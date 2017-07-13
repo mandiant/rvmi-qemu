@@ -2,6 +2,7 @@
  * QEMU monitor
  *
  * Copyright (c) 2003-2004 Fabrice Bellard
+ * Copyright (C) 2017 FireEye, Inc. All Rights Reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -78,6 +79,7 @@
 #include "sysemu/qtest.h"
 #include "qemu/cutils.h"
 #include "qapi/qmp/dispatch.h"
+#include "vmi.h"
 
 #if defined(TARGET_S390X)
 #include "hw/s390x/storage-keys.h"
@@ -3857,11 +3859,13 @@ static void monitor_qmp_event(void *opaque, int event)
         data = get_qmp_greeting();
         monitor_json_emitter(mon, data);
         qobject_decref(data);
+        vmi_initialize();
         mon_refcount++;
         break;
     case CHR_EVENT_CLOSED:
         json_message_parser_destroy(&mon->qmp.parser);
         json_message_parser_init(&mon->qmp.parser, handle_qmp_command);
+        vmi_uninitialize();
         mon_refcount--;
         monitor_fdsets_cleanup();
         break;

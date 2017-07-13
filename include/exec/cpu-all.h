@@ -2,6 +2,7 @@
  * defines common to all virtual CPUs
  *
  *  Copyright (c) 2003 Fabrice Bellard
+ *  Copyright (C) 2017 FireEye, Inc. All Rights Reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -32,6 +33,7 @@
 #define EXCP_HALTED     0x10003 /* cpu is halted (waiting for external event) */
 #define EXCP_YIELD      0x10004 /* cpu wants to yield timeslice to another */
 #define EXCP_ATOMIC     0x10005 /* stop-the-world and emulate atomic */
+#define EXCP_VMI        0x10006 /* cpu is exiting for vmi event */
 
 /* some important defines:
  *

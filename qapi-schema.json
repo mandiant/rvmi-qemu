@@ -20,6 +20,9 @@
 # QAPI introspection
 { 'include': 'qapi/introspect.json' }
 
+# VMI command and event definitions
+{ 'include': 'qapi/vmi.json' }
+
 ##
 # @qmp_capabilities:
 #
@@ -185,7 +188,7 @@
   'data': [ 'debug', 'inmigrate', 'internal-error', 'io-error', 'paused',
             'postmigrate', 'prelaunch', 'finish-migrate', 'restore-vm',
             'running', 'save-vm', 'shutdown', 'suspended', 'watchdog',
-            'guest-panicked', 'colo' ] }
+            'guest-panicked', 'colo', 'vmi' ] }
 
 ##
 # @StatusInfo:
@@ -4776,3 +4779,52 @@
 # Since: 2.7
 ##
 { 'command': 'query-hotpluggable-cpus', 'returns': ['HotpluggableCPU'] }
+
+{ 'command': 'gdbserver',
+  'data': {'device': 'str'}
+}
+
+##
+# @savevm
+#
+# Take a snapshot of the VM.
+#
+# @id: #optional The id that the snapshot will be saved under.
+#
+# @name: #optional The name that the snapshot will be saved under.
+##
+{ 'command': 'savevm',
+  'data': {'*id': 'str', '*name': 'str' }}
+
+##
+# @loadvm
+#
+# Load a snapshot.
+#
+# @id: #optional The id of the snapshot that should be loaded.
+#
+# @name: #optional The name of the snapshot that should be loaded.
+##
+{ 'command': 'loadvm',
+  'data': {'*id': 'str', '*name': 'str' }}
+
+
+##
+# @delvm
+#
+# Delete a snapshot.
+#
+# @id: #optional The id of the snapshot that should be deleted.
+#
+# @name: #optional The name of the snapshot that should be deleted.
+##
+{ 'command': 'delvm',
+  'data': {'*id': 'str', '*name': 'str' }}
+
+##
+# @info-snapshots
+#
+# Get a list of all snapshots.
+##
+{ 'command': 'info-snapshots',
+  'returns': ['SnapshotInfo'] }

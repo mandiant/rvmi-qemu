@@ -3,6 +3,7 @@
  *
  * Copyright (C) 2006-2008 Qumranet Technologies
  * Copyright IBM, Corp. 2008
+ * Copyright (C) 2017 FireEye, Inc. All Rights Reserved.
  *
  * Authors:
  *  Anthony Liguori   <aliguori@us.ibm.com>
@@ -45,6 +46,8 @@
 #include "migration/migration.h"
 #include "exec/memattrs.h"
 #include "trace.h"
+
+#include "vmi.h"
 
 //#define DEBUG_KVM
 
@@ -3212,6 +3215,19 @@ int kvm_arch_handle_exit(CPUState *cs, struct kvm_run *run)
         qemu_mutex_lock_iothread();
         ret = kvm_handle_debug(cpu, &run->debug.arch);
         qemu_mutex_unlock_iothread();
+
+        if(ret && vmi_initialized()){
+            memset(&run->vmi_event,0,sizeof(union kvm_vmi_event));
+            run->vmi_event.type = KVM_VMI_EVENT_DEBUG;
+            run->vmi_event.debug.single_step = (run->debug.arch.dr6 & (1 << 14));
+            run->vmi_event.debug.watchpoint = (cs->watchpoint_hit) ? true : false;
+            if(run->vmi_event.debug.watchpoint){
+                run->vmi_event.debug.watchpoint_gva = cs->watchpoint_hit->vaddr;
+                run->vmi_event.debug.watchpoint_flags = cs->watchpoint_hit->flags;
+            }
+            run->vmi_event.debug.exception = run->debug.arch.exception;
+            cs->vmi_event = &run->vmi_event;
+        }
         break;
     case KVM_EXIT_HYPERV:
         ret = kvm_hv_handle_exit(cpu, &run->hyperv);
@@ -3219,6 +3235,13 @@ int kvm_arch_handle_exit(CPUState *cs, struct kvm_run *run)
     case KVM_EXIT_IOAPIC_EOI:
         ioapic_eoi_broadcast(run->eoi.vector);
         ret = 0;
+        break;
+    case KVM_EXIT_VMI_EVENT:
+        ret = 0;
+        if(vmi_initialized()){
+            cs->vmi_event = &run->vmi_event;
+            ret = EXCP_VMI;
+        }
         break;
     default:
         fprintf(stderr, "KVM: unknown exit reason %d\n", run->exit_reason);

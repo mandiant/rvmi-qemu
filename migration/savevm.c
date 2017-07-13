@@ -3,6 +3,7 @@
  *
  * Copyright (c) 2003-2008 Fabrice Bellard
  * Copyright (c) 2009-2015 Red Hat Inc
+ * Copyright (C) 2017 FireEye, Inc. All Rights Reserved.
  *
  * Authors:
  *  Juan Quintela <quintela@redhat.com>
@@ -54,6 +55,11 @@
 #include "qemu/cutils.h"
 #include "io/channel-buffer.h"
 #include "io/channel-file.h"
+#include "block/block.h"
+
+#include "qapi-types.h"
+#include "qapi/qmp/qerror.h"
+#include "qmp-commands.h"
 
 #ifndef ETH_P_RARP
 #define ETH_P_RARP 0x8035
@@ -2108,6 +2114,129 @@ void hmp_savevm(Monitor *mon, const QDict *qdict)
     }
 }
 
+void qmp_savevm(bool has_id, const char *id,
+                bool has_name, const char *name, Error **errp)
+{
+    BlockDriverState *bs, *bs1;
+    QEMUSnapshotInfo sn1, *sn = &sn1, old_sn1, *old_sn = &old_sn1;
+    int ret;
+    QEMUFile *f;
+    int saved_vm_running;
+    uint64_t vm_state_size;
+    qemu_timeval tv;
+    struct tm tm;
+    AioContext *aio_context;
+    Error *local;
+
+    if (!bdrv_all_can_snapshot(&bs)) {
+        error_setg(errp,
+                   "Device '%s' is writable but does not "
+                   "support snapshots.\n", bdrv_get_device_name(bs));
+        return;
+    }
+
+    /* Delete old snapshots of the same name/id */
+    if ((name || id) &&
+        bdrv_all_delete_snapshot_by_id_and_name(id, name, &bs1, &local) < 0) {
+        error_setg(errp,
+                   "Error while deleting snapshot on device '%s': ",
+                   bdrv_get_device_name(bs1));
+        return;
+    }
+
+    bs = bdrv_all_find_vmstate_bs();
+    if (bs == NULL) {
+        error_setg(errp, "No block device can accept snapshots\n");
+        return;
+    }
+    aio_context = bdrv_get_aio_context(bs);
+
+    saved_vm_running = runstate_is_running();
+
+    ret = global_state_store();
+    if (ret) {
+        error_setg(errp, "Error saving global state\n");
+        return;
+    }
+
+    if (saved_vm_running)
+        vm_stop(RUN_STATE_SAVE_VM);
+
+    aio_context_acquire(aio_context);
+
+    memset(sn, 0, sizeof(*sn));
+
+    /* fill auxiliary fields */
+    qemu_gettimeofday(&tv);
+    sn->date_sec = tv.tv_sec;
+    sn->date_nsec = tv.tv_usec * 1000;
+    sn->vm_clock_nsec = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+
+    if (name || id) {
+        if (bdrv_snapshot_find_by_id_and_name(bs, id, name, old_sn, &local)) {
+            if (name)
+                pstrcpy(sn->name, sizeof(sn->name), name);
+            else
+                pstrcpy(sn->name, sizeof(sn->name), old_sn->name);
+
+            if (id)
+                pstrcpy(sn->id_str, sizeof(sn->id_str), id);
+            else
+                pstrcpy(sn->id_str, sizeof(sn->id_str), old_sn->id_str);
+
+        } else {
+            if (name)
+                pstrcpy(sn->name, sizeof(sn->name), name);
+            else {
+                localtime_r((const time_t *)&tv.tv_sec, &tm);
+                strftime(sn->name, sizeof(sn->name), "vm-%Y%m%d%H%M%S", &tm);
+            }
+
+            if (id)
+                pstrcpy(sn->id_str, sizeof(sn->id_str), id);
+            else {
+                aio_context_release(aio_context);
+                bdrv_all_find_free_id(&bs1, errp, sn->id_str, sizeof(sn->id_str));
+                aio_context_acquire(aio_context);
+            }
+        }
+    } else {
+        /* cast below needed for OpenBSD where tv_sec is still 'long' */
+        localtime_r((const time_t *)&tv.tv_sec, &tm);
+        strftime(sn->name, sizeof(sn->name), "vm-%Y%m%d%H%M%S", &tm);
+        
+        aio_context_release(aio_context);
+        bdrv_all_find_free_id(&bs1, errp, sn->id_str, sizeof(sn->id_str));
+        aio_context_acquire(aio_context);
+    }
+
+    /* save the VM state */
+    f = qemu_fopen_bdrv(bs, 1);
+    if (!f) {
+        error_setg(errp, "Could not open VM state file\n");
+        goto the_end;
+    }
+    ret = qemu_savevm_state(f, &local);
+    vm_state_size = qemu_ftell(f);
+    qemu_fclose(f);
+    if (ret < 0) {
+        error_setg(errp, "An error occurred while saving the state\n");
+        goto the_end;
+    }
+
+    ret = bdrv_all_create_snapshot(sn, bs, vm_state_size, &bs);
+    if (ret < 0) {
+        error_setg(errp, "Error while creating snapshot on '%s'\n",
+                   bdrv_get_device_name(bs));
+    }
+
+ the_end:
+    aio_context_release(aio_context);
+    if (saved_vm_running) {
+        vm_start();
+    }
+}
+
 void qmp_xen_save_devices_state(const char *filename, Error **errp)
 {
     QEMUFile *f;
@@ -2241,6 +2370,98 @@ int load_vmstate(const char *name)
     return 0;
 }
 
+void qmp_loadvm(bool has_id, const char *id,
+                bool has_name, const char *name, Error **errp)
+{
+    BlockDriverState *bs, *bs_vm_state;
+    QEMUSnapshotInfo sn;
+    QEMUFile *f;
+    int ret;
+    int saved_vm_running;
+    AioContext *aio_context;
+    Error *local;
+
+    if (!id && !name) {
+        error_setg(errp, "ID or name must be provided");
+        return;
+    }
+
+    if (!bdrv_all_can_snapshot(&bs)) {
+        error_setg(errp, "Device '%s' is writable but does not support snapshots.",
+                   bdrv_get_device_name(bs));
+        return;
+    }
+
+    ret = bdrv_all_find_snapshot_by_id_and_name(id, name, &bs, &local);
+    if (ret < 0 || !bs) {
+        error_setg(errp, "Snapshot with ID '%s' and Name '%s' not found",
+                   id ? id : "NULL", name ? name : "NULL");
+        return;
+    }
+
+    bs_vm_state = bdrv_all_find_vmstate_bs();
+    if (!bs_vm_state) {
+        error_setg(errp, "No block device supports snapshots");
+        return;
+    }
+    aio_context = bdrv_get_aio_context(bs_vm_state);
+
+    /* Don't even try to load empty VM states */
+    aio_context_acquire(aio_context);
+    ret = bdrv_snapshot_find_by_id_and_name(bs_vm_state, id, name, &sn, &local);
+    aio_context_release(aio_context);
+    if (ret == 0) {
+        error_setg(errp, "Snapshot could not be found");
+        return;
+    } else if (sn.vm_state_size == 0) {
+        error_setg(errp, "This is a disk-only snapshot. Revert to it offline "
+            "             using qemu-img.");
+        return;
+    }
+
+    saved_vm_running = runstate_is_running();
+
+    if (saved_vm_running)
+        vm_stop(RUN_STATE_RESTORE_VM);
+
+    /* Flush all IO requests so they don't interfere with the new state.  */
+    bdrv_drain_all();
+
+    ret = bdrv_all_goto_snapshot(sn.id_str, &bs);
+    if (ret < 0) {
+        error_setg(errp, "Error %d while activating snapshot '%s' on '%s'",
+                   ret, name ? name : "NULL", bdrv_get_device_name(bs));
+        return;
+    }
+
+    /* restore the VM state */
+    f = qemu_fopen_bdrv(bs_vm_state, 0);
+    if (!f) {
+        error_setg(errp, "Could not open VM state file");
+        return;
+    }
+
+    qemu_system_reset(VMRESET_SILENT);
+    migration_incoming_state_new(f);
+
+    aio_context_acquire(aio_context);
+    ret = qemu_loadvm_state(f);
+    qemu_fclose(f);
+    aio_context_release(aio_context);
+
+    migration_incoming_state_destroy();
+    if (ret < 0) {
+        error_setg(errp, "Error %d while loading VM state", ret);
+        return;
+    }
+
+    if (saved_vm_running)
+        vm_start();
+
+    return;
+}
+
+
 void hmp_delvm(Monitor *mon, const QDict *qdict)
 {
     BlockDriverState *bs;
@@ -2253,6 +2474,26 @@ void hmp_delvm(Monitor *mon, const QDict *qdict)
                           bdrv_get_device_name(bs));
     }
 }
+
+void qmp_delvm(bool has_id, const char *id,
+               bool has_name, const char *name, Error **errp)
+{
+    BlockDriverState *bs;
+    Error *local;
+
+    if (!name && !id) {
+        error_setg(errp, "ID or name must be provided");
+        return;
+    }
+
+    if (bdrv_all_delete_snapshot_by_id_and_name(id, name, &bs, &local) < 0) {
+        error_setg(errp,
+                   "Error while deleting snapshot on device '%s': ",
+                   bdrv_get_device_name(bs));
+        return;
+    }
+}
+
 
 void hmp_info_snapshots(Monitor *mon, const QDict *qdict)
 {
@@ -2395,6 +2636,47 @@ void hmp_info_snapshots(Monitor *mon, const QDict *qdict)
     g_free(sn_tab);
     g_free(global_snapshots);
 
+}
+
+SnapshotInfoList *qmp_info_snapshots(Error **errp) {
+    SnapshotInfoList *list, *tmp, *first, *last;
+
+    BlockDriverState *bs;
+    BdrvNextIterator it;
+
+    list = NULL;
+
+    for (bs = bdrv_first(&it); bs; bs = bdrv_next(&it)) {
+        AioContext *ctx = bdrv_get_aio_context(bs);
+
+        aio_context_acquire(ctx);
+
+        if (bdrv_query_snapshot_info_list(bs, &tmp, errp) != 0) {
+            aio_context_release(ctx);
+            return NULL;
+        }
+
+        aio_context_release(ctx);
+
+        first = tmp;
+        last = NULL;
+
+        while (tmp) {
+            last = tmp;
+            tmp = tmp->next;
+        }
+
+        if (list) {
+            if (last)
+                last->next = list;
+
+            list = first;
+        }
+        else
+            list = first;
+    }
+
+    return list;
 }
 
 void vmstate_register_ram(MemoryRegion *mr, DeviceState *dev)

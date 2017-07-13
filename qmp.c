@@ -2,6 +2,7 @@
  * QEMU Management Protocol
  *
  * Copyright IBM, Corp. 2011
+ * Copyright (C) 2017 FireEye, Inc. All Rights Reserved.
  *
  * Authors:
  *  Anthony Liguori   <aliguori@us.ibm.com>
@@ -36,6 +37,8 @@
 #include "qom/object_interfaces.h"
 #include "hw/mem/pc-dimm.h"
 #include "hw/acpi/acpi_dev_interface.h"
+#include "vmi.h"
+#include "qapi-event.h"
 
 NameInfo *qmp_query_name(Error **errp)
 {
@@ -208,6 +211,10 @@ void qmp_cont(Error **errp)
 
     if (runstate_check(RUN_STATE_INMIGRATE)) {
         autostart = 1;
+    }
+    else if(vmi_initialized() && vmi_pending_ss()){
+        vm_start_silent(vmi_pending_ss());
+        qapi_event_send_resume(&error_abort);
     } else {
         vm_start();
     }

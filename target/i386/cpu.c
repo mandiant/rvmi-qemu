@@ -2,6 +2,7 @@
  *  i386 CPUID helper functions
  *
  *  Copyright (c) 2003 Fabrice Bellard
+ *  Copyright (C) 2017 FireEye, Inc. All Rights Reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -3730,6 +3731,10 @@ static void x86_cpu_common_class_init(ObjectClass *oc, void *data)
     cc->cpu_exec_enter = x86_cpu_exec_enter;
     cc->cpu_exec_exit = x86_cpu_exec_exit;
 
+    //VMI
+    cc->cpu_get_state = x86_cpu_get_state;
+    cc->cpu_set_state = x86_cpu_set_state;
+    
     dc->cannot_instantiate_with_device_add_yet = false;
 }
 

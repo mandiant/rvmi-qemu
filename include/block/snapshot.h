@@ -2,6 +2,7 @@
  * Block layer snapshot related functions
  *
  * Copyright (c) 2003-2008 Fabrice Bellard
+ * Copyright (C) 2017 FireEye, Inc. All Rights Reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -83,13 +84,23 @@ int bdrv_snapshot_load_tmp_by_id_or_name(BlockDriverState *bs,
 bool bdrv_all_can_snapshot(BlockDriverState **first_bad_bs);
 int bdrv_all_delete_snapshot(const char *name, BlockDriverState **first_bsd_bs,
                              Error **err);
+int bdrv_all_delete_snapshot_by_id_and_name(const char *id, const char *name,
+                                            BlockDriverState **first_bad_bs,
+                                            Error **err);
+
 int bdrv_all_goto_snapshot(const char *name, BlockDriverState **first_bsd_bs);
 int bdrv_all_find_snapshot(const char *name, BlockDriverState **first_bad_bs);
+
 int bdrv_all_create_snapshot(QEMUSnapshotInfo *sn,
                              BlockDriverState *vm_state_bs,
                              uint64_t vm_state_size,
                              BlockDriverState **first_bad_bs);
-
+int bdrv_all_find_snapshot_by_id_and_name(const char *id, const char *name,
+                                          BlockDriverState **first_bad_bs,
+                                          Error **errp);
+int bdrv_all_find_free_id(BlockDriverState **first_bad_bs,
+                          Error **errp,
+                          char *out, size_t size);
 BlockDriverState *bdrv_all_find_vmstate_bs(void);
 
 #endif

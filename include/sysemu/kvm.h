@@ -2,6 +2,7 @@
  * QEMU KVM support
  *
  * Copyright IBM, Corp. 2008
+ * Copyright (C) 2017 FireEye, Inc. All Rights Reserved.
  *
  * Authors:
  *  Anthony Liguori   <aliguori@us.ibm.com>
@@ -18,6 +19,8 @@
 #include "qom/cpu.h"
 #include "exec/memattrs.h"
 #include "hw/irq.h"
+
+#include <linux/kvm_vmi.h>
 
 #ifdef CONFIG_KVM
 #include <linux/kvm.h>
@@ -227,6 +230,7 @@ int kvm_init_vcpu(CPUState *cpu);
 int kvm_cpu_exec(CPUState *cpu);
 int kvm_destroy_vcpu(CPUState *cpu);
 
+
 #ifdef NEED_CPU_H
 #include "cpu.h"
 
@@ -238,6 +242,7 @@ int kvm_remove_breakpoint(CPUState *cpu, target_ulong addr,
                           target_ulong len, int type);
 void kvm_remove_all_breakpoints(CPUState *cpu);
 int kvm_update_guest_debug(CPUState *cpu, unsigned long reinject_trap);
+int kvm_update_mtf(CPUState *cpu);
 #ifndef _WIN32
 int kvm_set_signal_mask(CPUState *cpu, const sigset_t *sigset);
 #endif
@@ -550,4 +555,7 @@ int kvm_set_one_reg(CPUState *cs, uint64_t id, void *source);
  */
 int kvm_get_one_reg(CPUState *cs, uint64_t id, void *target);
 int kvm_get_max_memslots(void);
+
+int kvm_vmi_vcpu_ioctl_all(uint32_t ioctl, void *data);
+int kvm_vmi_vcpu_ioctl_single(uint32_t cpu_id, uint32_t ioctl, void *data);
 #endif

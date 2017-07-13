@@ -1,3 +1,22 @@
+/*
+ * Copyright (C) 2017 FireEye, Inc. All Rights Reserved.
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, see <http://www.gnu.org/licenses/>.
+ */
+
+
+
 #ifndef SYSEMU_H
 #define SYSEMU_H
 /* Misc. things related to the system emulator.  */
@@ -38,6 +57,8 @@ void vm_state_notify(int running, RunState state);
 
 void vm_start(void);
 int vm_stop(RunState state);
+void vm_start_silent(CPUState *cpu);
+int vm_stop_silent(RunState state);
 int vm_stop_force_state(RunState state);
 
 typedef enum WakeupReason {

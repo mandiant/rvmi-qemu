@@ -2,6 +2,7 @@
  * QEMU CPU model
  *
  * Copyright (c) 2012 SUSE LINUX Products GmbH
+ * Copyright (C) 2017 FireEye, Inc. All Rights Reserved.
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -27,6 +28,7 @@
 #include "qemu/bitmap.h"
 #include "qemu/queue.h"
 #include "qemu/thread.h"
+#include "vmi_bp.h"
 
 typedef int (*WriteCoreDumpFunction)(const void *buf, size_t size,
                                      void *opaque);
@@ -195,6 +197,10 @@ typedef struct CPUClass {
     bool (*cpu_exec_interrupt)(CPUState *cpu, int interrupt_request);
 
     void (*disas_set_info)(CPUState *cpu, disassemble_info *info);
+
+    //VMI
+    void (*cpu_get_state)(CPUState *cs, void *state);
+    void (*cpu_set_state)(CPUState *cs, void *state);
 } CPUClass;
 
 #ifdef HOST_WORDS_BIGENDIAN
@@ -392,6 +398,11 @@ struct CPUState {
        (absolute value) offset as small as possible.  This reduces code
        size, especially for hosts without large memory offsets.  */
     uint32_t tcg_exit_req;
+
+    //vmi
+    union kvm_vmi_event *vmi_event;
+    bool vmi_mtf_enabled;
+    bool vmi_mtf_need_stop;
 };
 
 QTAILQ_HEAD(CPUTailQ, CPUState);
@@ -913,6 +924,7 @@ void qemu_init_vcpu(CPUState *cpu);
  * Enables or disables single-stepping for @cpu.
  */
 void cpu_single_step(CPUState *cpu, int enabled);
+void cpu_mtf_single_step(CPUState *cpu, bool enabled);
 
 /* Breakpoint/watchpoint flags */
 #define BP_MEM_READ           0x01

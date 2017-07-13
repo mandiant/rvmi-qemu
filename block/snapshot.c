@@ -2,6 +2,7 @@
  * Block layer snapshot related functions
  *
  * Copyright (c) 2003-2008 Fabrice Bellard
+ * Copyright (c) 2017 FireEye, Inc. All Rights Reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -419,6 +420,33 @@ fail:
     return ret;
 }
 
+int bdrv_all_delete_snapshot_by_id_and_name(const char *id, const char *name,
+                                            BlockDriverState **first_bad_bs,
+                                            Error **err)
+{
+    int ret = 0;
+    BlockDriverState *bs;
+    BdrvNextIterator it;
+    QEMUSnapshotInfo sn1, *snapshot = &sn1;
+
+    for (bs = bdrv_first(&it); bs; bs = bdrv_next(&it)) {
+        AioContext *ctx = bdrv_get_aio_context(bs);
+
+        aio_context_acquire(ctx);
+        if (bdrv_can_snapshot(bs) &&
+            bdrv_snapshot_find_by_id_and_name(bs, id, name, snapshot, err)) {
+            ret = bdrv_snapshot_delete(bs, id, name, err);
+        }
+        aio_context_release(ctx);
+        if (ret < 0) {
+            goto fail;
+        }
+    }
+
+fail:
+    *first_bad_bs = bs;
+    return ret;
+}
 
 int bdrv_all_goto_snapshot(const char *name, BlockDriverState **first_bad_bs)
 {
@@ -467,6 +495,65 @@ int bdrv_all_find_snapshot(const char *name, BlockDriverState **first_bad_bs)
 fail:
     *first_bad_bs = bs;
     return err;
+}
+
+int bdrv_all_find_snapshot_by_id_and_name(const char *id, const char *name,
+                                          BlockDriverState **first_bad_bs,
+                                          Error **errp)
+{
+    QEMUSnapshotInfo sn;
+    int err = 0;
+    BlockDriverState *bs;
+    BdrvNextIterator it;
+
+    if (errp)
+        (*errp) = NULL;
+
+    for (bs = bdrv_first(&it); bs; bs = bdrv_next(&it)) {
+        AioContext *ctx = bdrv_get_aio_context(bs);
+
+        aio_context_acquire(ctx);
+        if (bdrv_can_snapshot(bs) &&
+             bdrv_snapshot_find_by_id_and_name(bs, id, name, &sn, errp)) {
+            goto out;
+        }
+        aio_context_release(ctx);
+        if (errp && *errp) {
+            err = -1;
+            goto out;
+        }
+    }
+
+out:
+    *first_bad_bs = bs;
+    return err;
+}
+
+int bdrv_all_find_free_id(BlockDriverState **first_bad_bs,
+                          Error **errp,
+                          char *out, size_t size)
+{
+    BlockDriverState *bs;
+    char buf[256];
+    uint16_t id = 0;
+
+    while (id < 0xffff) {
+        bs = NULL;
+        snprintf(buf, sizeof(buf), "%u", id);
+        
+        if (bdrv_all_find_snapshot_by_id_and_name(buf, NULL, &bs, errp) < 0)
+            return -1;
+
+        if (!bs) {
+            strncpy(out, buf, size);
+            out[size - 1] = '\0';
+            return 0;
+        }
+
+        ++id;
+    }
+
+    return -1;
 }
 
 int bdrv_all_create_snapshot(QEMUSnapshotInfo *sn,
